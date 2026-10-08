@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d6efd">
+  <title>Scanner QR - Inventaris Laboratorium</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #111827;
+      color: #fff;
+    }
+    .wrap { width: 100%; max-width: 560px; margin: auto; padding: 18px; }
+    .card {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 15px 40px rgba(0,0,0,.28);
+    }
+    h1 { font-size: 22px; margin: 0 0 5px; }
+    .sub { color: #cbd5e1; font-size: 13px; margin-bottom: 16px; }
+    #reader {
+      width: 100%;
+      min-height: 310px;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 2px solid #374151;
+    }
+    #reader video { width: 100% !important; height: auto !important; object-fit: cover; }
+    .status {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .result {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #111827;
+      border: 1px dashed #4b5563;
+      word-break: break-all;
+      font-family: Consolas, monospace;
+      font-size: 15px;
+      min-height: 45px;
+    }
+    .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    button, label.button {
+      border: 0;
+      border-radius: 9px;
+      padding: 11px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .primary { background: #0d6efd; color: #fff; }
+    .success { background: #198754; color: #fff; }
+    .danger { background: #dc3545; color: #fff; }
+    .secondary { background: #374151; color: #fff; }
+    input[type=file] { display: none; }
+    .note { color: #94a3b8; font-size: 12px; margin-top: 14px; line-height: 1.5; }
+    .ok { color: #86efac; }
+    .warn { color: #fca5a5; }
+    @media (max-width: 480px) {
+      .wrap { padding: 10px; }
+      #reader { min-height: 260px; }
+      button, label.button { flex: 1 1 45%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>📷 Scanner QR Inventory</h1>
+      <div class="sub">Inventaris Laboratorium • Webcam Laptop / Kamera HP</div>
+
+      <div id="reader"></div>
+
+      <div id="status" class="status">
+        Tekan <b>Mulai Kamera</b>, lalu izinkan akses kamera.
+      </div>
+
+      <div id="hasil" class="result">Belum ada QR yang dibaca.</div>
+
+      <div class="buttons">
+        <button class="primary" type="button" onclick="mulaiKamera()">📷 Mulai Kamera</button>
+        <button class="danger" type="button" onclick="hentikanKamera()">⛔ Stop Kamera</button>
+        <label class="button secondary">
+          🖼️ Foto QR
+          <input id="file-qr" type="file" accept="image/*" capture="environment" onchange="bacaFoto(this)">
+        </label>
+        <button class="success" type="button" onclick="kembaliKeAplikasi()">↩ Kembali</button>
+      </div>
+
+      <div class="note">
+        Pastikan halaman scanner dibuka melalui HTTPS. Pada laptop, gunakan webcam internal/USB. Pada HP, kamera belakang akan diprioritaskan.
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script>
+    let scanner = null;
+    let kameraAktif = false;
+    let sudahScan = false;
+    let sedangMengirim = false;
+
+    const statusEl = document.getElementById('status');
+    const hasilEl = document.getElementById('hasil');
+
+    function status(teks, tipe) {
+      statusEl.innerHTML = teks;
+      statusEl.className = 'status' + (tipe === 'ok' ? ' ok' : tipe === 'warn' ? ' warn' : '');
+    }
+
+    async function mulaiKamera() {
+      if (kameraAktif) return;
+      sudahScan = false;
+      sedangMengirim = false;
+
+      if (typeof Html5Qrcode === 'undefined') {
+        status('Library scanner belum termuat. Periksa koneksi internet.', 'warn');
+        return;
+      }
+
+      status('Meminta izin kamera...');
+
+      try {
+        scanner = new Html5Qrcode('reader');
+
+        const config = {
+          fps: 10,
+          qrbox: function(viewfinderWidth, viewfinderHeight) {
+            const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72);
+            return { width: Math.min(size, 320), height: Math.min(size, 320) };
+          },
+          aspectRatio: 1.0,
+          rememberLastUsedCamera: true,
+          showTorchButtonIfSupported: true,
+          showZoomSliderIfSupported: true,
+          defaultZoomValueIfSupported: 2
+        };
+
+        // Kamera belakang diprioritaskan pada HP. Pada laptop, library akan memilih webcam yang tersedia.
+        await scanner.start(
+          { facingMode: { ideal: 'environment' } },
+          config,
+          qrBerhasil,
+          function() {}
+        );
+
+        kameraAktif = true;
+        status('✓ Kamera aktif. Arahkan QR Code ke kotak pemindaian.', 'ok');
+      } catch (err) {
+        console.error(err);
+        kameraAktif = false;
+        scanner = null;
+        let pesan = err && err.message ? err.message : String(err);
+        if (/permission|notallowed|denied/i.test(pesan)) {
+          pesan = 'Akses kamera ditolak. Klik ikon kamera pada address bar browser, izinkan kamera, lalu tekan Mulai Kamera lagi.';
+        }
+        status('Kamera gagal dibuka: ' + pesan, 'warn');
+      }
+    }
+
+    async function qrBerhasil(decodedText) {
+      if (sudahScan || sedangMengirim) return;
+      const kode = String(decodedText || '').trim();
+      if (!kode) return;
+
+      sudahScan = true;
+      sedangMengirim = true;
+      hasilEl.textContent = kode;
+      status('✓ QR berhasil dibaca. Mengirim kode ke aplikasi inventory...', 'ok');
+
+      try {
+        if (navigator.vibrate) navigator.vibrate([100, 60, 100]);
+      } catch (e) {}
+
+      await hentikanKamera();
+
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          type: 'QR_SCAN',
+          code: kode,
+          timestamp: Date.now()
+        }, '*');
+
+        status('✓ Kode sudah dikirim ke aplikasi. Jendela scanner akan ditutup.', 'ok');
+        setTimeout(function() { window.close(); }, 650);
+      } else {
+        sedangMengirim = false;
+        status('QR terbaca, tetapi halaman aplikasi asal tidak ditemukan. Kode dapat disalin secara manual.', 'warn');
+      }
+    }
+
+    async function bacaFoto(input) {
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+
+      if (typeof Html5Qrcode === 'undefined') {
+        status('Library scanner belum termuat.', 'warn');
+        return;
+      }
+
+      sudahScan = false;
+      status('Membaca foto QR...');
+
+      let temp = null;
+      try {
+        temp = new Html5Qrcode('reader');
+        const decoded = await temp.scanFile(file, true);
+        await qrBerhasil(decoded);
+      } catch (err) {
+        console.error(err);
+        status('QR tidak terbaca dari foto. Gunakan foto yang terang, fokus, dan QR tidak terpotong.', 'warn');
+      } finally {
+        if (temp) {
+          try { await temp.clear(); } catch (e) {}
+        }
+        if (!kameraAktif) scanner = null;
+      }
+    }
+
+    async function hentikanKamera() {
+      if (!scanner) {
+        kameraAktif = false;
+        return;
+      }
+
+      try {
+        if (kameraAktif) await scanner.stop();
+      } catch (e) {
+        console.log(e);
+      }
+
+      try { await scanner.clear(); } catch (e) {}
+      scanner = null;
+      kameraAktif = false;
+    }
+
+    function kembaliKeAplikasi() {
+      if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); } catch (e) {}
+      }
+      window.close();
+    }
+
+    window.addEventListener('beforeunload', function() {
+      if (scanner && kameraAktif) {
+        try { scanner.stop(); } catch (e) {}
+      }
+    });
+  </script>
+</body>
+</html>
